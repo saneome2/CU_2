@@ -79,36 +79,42 @@ def build_dependency_graph(package, version, repo_url, test_mode):
             all_deps.add(dep)
     return all_deps
 
-def topological_sort(graph):
-    # Build reverse graph: dep -> dependents
-    reverse_graph = defaultdict(list)
-    all_nodes = set(graph.keys())
+def generate_d2(graph):
+    lines = []
     for node in graph:
         for dep in graph[node]:
-            reverse_graph[dep].append(node)
-            all_nodes.add(dep)
+            lines.append(f"{node} -> {dep}")
+    return "\n".join(lines)
+
+def generate_svg_tree(graph, root):
+    positions = {}
+    def assign_positions(node, x, y):
+        if node in positions:
+            return
+        positions[node] = (x, y)
+        deps = graph.get(node, [])
+        width = max(100, len(deps) * 120)
+        start_x = x - width // 2 + 60
+        for i, dep in enumerate(deps):
+            assign_positions(dep, start_x + i * 120, y + 100)
     
-    # Kahn's algorithm
-    in_degree = {node: 0 for node in all_nodes}
-    for node in reverse_graph:
-        for dependent in reverse_graph[node]:
-            in_degree[dependent] += 1
+    assign_positions(root, 400, 50)
     
-    queue = [node for node in all_nodes if in_degree[node] == 0]
-    order = []
-    while queue:
-        current = queue.pop(0)
-        order.append(current)
-        if current in reverse_graph:
-            for dependent in reverse_graph[current]:
-                in_degree[dependent] -= 1
-                if in_degree[dependent] == 0:
-                    queue.append(dependent)
-    
-    # If not all nodes are in order, there is a cycle
-    if len(order) < len(all_nodes):
-        print("Цикл обнаружен, порядок загрузки неполный.")
-    return order
+    svg = '<?xml version="1.0" encoding="UTF-8"?>\n<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">\n'
+    # Draw edges
+    for node in graph:
+        if node in positions:
+            x1, y1 = positions[node]
+            for dep in graph[node]:
+                if dep in positions:
+                    x2, y2 = positions[dep]
+                    svg += f'  <line x1="{x1+50}" y1="{y1+50}" x2="{x2+50}" y2="{y2}" stroke="black" stroke-width="2" />\n'
+    # Draw nodes
+    for node, (x, y) in positions.items():
+        svg += f'  <rect x="{x}" y="{y}" width="100" height="50" fill="lightblue" stroke="black" stroke-width="2" rx="5" />\n'
+        svg += f'  <text x="{x+50}" y="{y+30}" text-anchor="middle" font-family="Arial" font-size="12">{node}</text>\n'
+    svg += '</svg>\n'
+    return svg
 
 def main():
     parser = argparse.ArgumentParser(description='Dependency Graph Visualization Tool')
@@ -118,7 +124,7 @@ def main():
     parser.add_argument('--test-mode', action='store_true', help='Режим работы с тестовым репозиторием')
     parser.add_argument('--version', required=True, help='Версия пакета')
     parser.add_argument('--output-file', default='graph.png', help='Имя сгенерированного файла с изображением графа')
-    parser.add_argument('--load-order', action='store_true', help='Режим вывода порядка загрузки зависимостей')
+    parser.add_argument('--ascii-tree', action='store_true', help='Режим вывода зависимостей в формате ASCII-дерева')
 
     try:
         args = parser.parse_args()
@@ -142,30 +148,7 @@ def main():
     # Построение графа зависимостей
     all_deps = build_dependency_graph(args.package_name, args.version, args.repo_url, args.test_mode)
 
-    if args.load_order:
-        # Build graph for topological sort
-        graph = defaultdict(list)
-        if args.test_mode:
-            graph = load_test_graph(args.repo_url)
-        else:
-            # For real mode, build partial graph
-            visited = set()
-            stack = [args.package_name]
-            while stack:
-                current = stack.pop()
-                if current in visited:
-                    continue
-                visited.add(current)
-                deps = get_direct_dependencies(current, args.repo_url, args.test_mode, args.version if current == args.package_name else None)
-                graph[current] = deps
-                for dep in deps:
-                    if dep not in visited:
-                        stack.append(dep)
-        order = topological_sort(graph)
-        print("Порядок загрузки зависимостей:")
-        for pkg in order:
-            print(pkg)
-    elif args.ascii_tree:
+    if args.ascii_tree:
         # Build graph for tree
         graph = defaultdict(list)
         if args.test_mode:
@@ -186,12 +169,36 @@ def main():
                         stack.append(dep)
         print_ascii_tree(args.package_name, graph)
     else:
-        # Save to file
-        with open(args.output_file, 'w') as f:
-            f.write(f"Dependency graph for {args.package_name}:\n")
-            for dep in sorted(all_deps):
-                f.write(f"{dep}\n")
-        print(f"Граф зависимостей сохранён в {args.output_file}")
+        # Build graph
+        graph = defaultdict(list)
+        if args.test_mode:
+            graph = load_test_graph(args.repo_url)
+        else:
+            # For real mode, build partial graph
+            visited = set()
+            stack = [args.package_name]
+            while stack:
+                current = stack.pop()
+                if current in visited:
+                    continue
+                visited.add(current)
+                deps = get_direct_dependencies(current, args.repo_url, args.test_mode, args.version if current == args.package_name else None)
+                graph[current] = deps
+                for dep in deps:
+                    if dep not in visited:
+                        stack.append(dep)
+        # Generate D2
+        d2_content = generate_d2(graph)
+        d2_file = args.output_file.replace('.png', '.d2')
+        with open(d2_file, 'w') as f:
+            f.write(d2_content)
+        print(f"D2 представление сохранено в {d2_file}")
+        # Generate SVG
+        svg_content = generate_svg_tree(graph, args.package_name)
+        svg_file = args.output_file.replace('.png', '.svg')
+        with open(svg_file, 'w') as f:
+            f.write(svg_content)
+        print(f"SVG изображение сохранено в {svg_file}")
 
 if __name__ == '__main__':
     main()
