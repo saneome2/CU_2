@@ -79,18 +79,36 @@ def build_dependency_graph(package, version, repo_url, test_mode):
             all_deps.add(dep)
     return all_deps
 
-def print_ascii_tree(package, graph, prefix="", is_last=True, visited=None):
-    if visited is None:
-        visited = set()
-    if package in visited:
-        print(prefix + ("└── " if is_last else "├── ") + package + " (cycle)")
-        return
-    visited.add(package)
-    print(prefix + ("└── " if is_last else "├── ") + package)
-    deps = graph.get(package, [])
-    for i, dep in enumerate(deps):
-        extension = "    " if is_last else "│   "
-        print_ascii_tree(dep, graph, prefix + extension, i == len(deps) - 1, visited.copy())  # copy to allow revisits in other branches
+def topological_sort(graph):
+    # Build reverse graph: dep -> dependents
+    reverse_graph = defaultdict(list)
+    all_nodes = set(graph.keys())
+    for node in graph:
+        for dep in graph[node]:
+            reverse_graph[dep].append(node)
+            all_nodes.add(dep)
+    
+    # Kahn's algorithm
+    in_degree = {node: 0 for node in all_nodes}
+    for node in reverse_graph:
+        for dependent in reverse_graph[node]:
+            in_degree[dependent] += 1
+    
+    queue = [node for node in all_nodes if in_degree[node] == 0]
+    order = []
+    while queue:
+        current = queue.pop(0)
+        order.append(current)
+        if current in reverse_graph:
+            for dependent in reverse_graph[current]:
+                in_degree[dependent] -= 1
+                if in_degree[dependent] == 0:
+                    queue.append(dependent)
+    
+    # If not all nodes are in order, there is a cycle
+    if len(order) < len(all_nodes):
+        print("Цикл обнаружен, порядок загрузки неполный.")
+    return order
 
 def main():
     parser = argparse.ArgumentParser(description='Dependency Graph Visualization Tool')
@@ -100,7 +118,7 @@ def main():
     parser.add_argument('--test-mode', action='store_true', help='Режим работы с тестовым репозиторием')
     parser.add_argument('--version', required=True, help='Версия пакета')
     parser.add_argument('--output-file', default='graph.png', help='Имя сгенерированного файла с изображением графа')
-    parser.add_argument('--ascii-tree', action='store_true', help='Режим вывода зависимостей в формате ASCII-дерева')
+    parser.add_argument('--load-order', action='store_true', help='Режим вывода порядка загрузки зависимостей')
 
     try:
         args = parser.parse_args()
@@ -124,7 +142,30 @@ def main():
     # Построение графа зависимостей
     all_deps = build_dependency_graph(args.package_name, args.version, args.repo_url, args.test_mode)
 
-    if args.ascii_tree:
+    if args.load_order:
+        # Build graph for topological sort
+        graph = defaultdict(list)
+        if args.test_mode:
+            graph = load_test_graph(args.repo_url)
+        else:
+            # For real mode, build partial graph
+            visited = set()
+            stack = [args.package_name]
+            while stack:
+                current = stack.pop()
+                if current in visited:
+                    continue
+                visited.add(current)
+                deps = get_direct_dependencies(current, args.repo_url, args.test_mode, args.version if current == args.package_name else None)
+                graph[current] = deps
+                for dep in deps:
+                    if dep not in visited:
+                        stack.append(dep)
+        order = topological_sort(graph)
+        print("Порядок загрузки зависимостей:")
+        for pkg in order:
+            print(pkg)
+    elif args.ascii_tree:
         # Build graph for tree
         graph = defaultdict(list)
         if args.test_mode:
