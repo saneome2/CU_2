@@ -9,8 +9,10 @@ from collections import defaultdict
 def get_direct_dependencies(package_name, repo_url, test_mode, version=None):
     if test_mode:
         # For test mode, repo_url is path to file describing graph
-        graph = load_test_graph(repo_url)
-        return graph.get(package_name, [])
+        graph, error = load_test_graph(repo_url)
+        if error:
+            return [], True
+        return graph.get(package_name, []), False
     else:
         apkindex_url = f"{repo_url}x86_64/APKINDEX.tar.gz"
         try:
@@ -18,7 +20,7 @@ def get_direct_dependencies(package_name, repo_url, test_mode, version=None):
                 apkindex_data = response.read()
         except Exception as e:
             print(f"Ошибка при скачивании APKINDEX: {e}")
-            return []
+            return [], True
 
         try:
             with tarfile.open(fileobj=io.BytesIO(apkindex_data), mode='r:gz') as tar:
@@ -39,11 +41,11 @@ def get_direct_dependencies(package_name, repo_url, test_mode, version=None):
                                     current_package['depends'] = line[2:].strip().split()
                             if current_package.get('name') == package_name:
                                 if version is None or current_package.get('version') == version:
-                                    return current_package.get('depends', [])
+                                    return current_package.get('depends', []), False
         except Exception as e:
             print(f"Ошибка при обработке APKINDEX: {e}")
-            return []
-    return []
+            return [], True
+    return [], False
 
 def load_test_graph(file_path):
     graph = defaultdict(list)
@@ -56,28 +58,33 @@ def load_test_graph(file_path):
                     package = package.strip()
                     deps = deps.strip().split()
                     graph[package] = deps
+        return graph, False
     except Exception as e:
         print(f"Ошибка при чтении тестового графа: {e}")
-    return graph
+        return defaultdict(list), True
 
 def build_dependency_graph(package, version, repo_url, test_mode):
     all_deps = set()
     visited = set()
     stack = [package]
+    error_occurred = False
     while stack:
         current = stack.pop()
         if current in visited:
             continue
         visited.add(current)
         if current == package:
-            deps = get_direct_dependencies(current, repo_url, test_mode, version)
+            deps, error = get_direct_dependencies(current, repo_url, test_mode, version)
         else:
-            deps = get_direct_dependencies(current, repo_url, test_mode)
+            deps, error = get_direct_dependencies(current, repo_url, test_mode)
+        if error:
+            error_occurred = True
+            break
         for dep in deps:
             if dep not in visited:
                 stack.append(dep)
             all_deps.add(dep)
-    return all_deps
+    return all_deps, error_occurred
 
 def generate_d2(graph):
     lines = []
@@ -146,13 +153,15 @@ def main():
         sys.exit(1)
 
     # Построение графа зависимостей
-    all_deps = build_dependency_graph(args.package_name, args.version, args.repo_url, args.test_mode)
+    all_deps, error = build_dependency_graph(args.package_name, args.version, args.repo_url, args.test_mode)
+    if error:
+        sys.exit(1)
 
     if args.ascii_tree:
         # Build graph for tree
         graph = defaultdict(list)
         if args.test_mode:
-            graph = load_test_graph(args.repo_url)
+            graph, _ = load_test_graph(args.repo_url)
         else:
             # For real mode, build partial graph
             visited = set()
@@ -162,7 +171,7 @@ def main():
                 if current in visited:
                     continue
                 visited.add(current)
-                deps = get_direct_dependencies(current, args.repo_url, args.test_mode, args.version if current == args.package_name else None)
+                deps, _ = get_direct_dependencies(current, args.repo_url, args.test_mode, args.version if current == args.package_name else None)
                 graph[current] = deps
                 for dep in deps:
                     if dep not in visited:
@@ -172,7 +181,7 @@ def main():
         # Build graph
         graph = defaultdict(list)
         if args.test_mode:
-            graph = load_test_graph(args.repo_url)
+            graph, _ = load_test_graph(args.repo_url)
         else:
             # For real mode, build partial graph
             visited = set()
@@ -182,7 +191,7 @@ def main():
                 if current in visited:
                     continue
                 visited.add(current)
-                deps = get_direct_dependencies(current, args.repo_url, args.test_mode, args.version if current == args.package_name else None)
+                deps, _ = get_direct_dependencies(current, args.repo_url, args.test_mode, args.version if current == args.package_name else None)
                 graph[current] = deps
                 for dep in deps:
                     if dep not in visited:
