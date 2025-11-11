@@ -34,8 +34,8 @@ python main.py --package-name busybox --repo-url https://dl-cdn.alpinelinux.org/
 - SVG: в файл .svg.
 
 ## Этапы разработки
-- Этап 1: Конфигурация (stage1_results.md).
-- Этап 2: Сбор данных (stage2_results.md).
-- Этап 3: Основные операции (stage3_results.md).
-- Этап 4: Дополнительные операции (stage4_results.md).
-- Этап 5: Визуализация (stage5_results.md).
+- [Этап 1: Конфигурация](stage1_results.md)
+- [Этап 2: Сбор данных](stage2_results.md)
+- [Этап 3: Основные операции](stage3_results.md)
+- [Этап 4: Дополнительные операции](stage4_results.md)
+- [Этап 5: Визуализация](stage5_results.md)
