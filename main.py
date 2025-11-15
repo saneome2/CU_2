@@ -123,6 +123,19 @@ def generate_svg_tree(graph, root):
     svg += '</svg>\n'
     return svg
 
+def print_ascii_tree(package, graph, prefix="", is_last=True, visited=None):
+    if visited is None:
+        visited = set()
+    if package in visited:
+        print(prefix + ("└── " if is_last else "├── ") + package + " (cycle)")
+        return
+    visited.add(package)
+    print(prefix + ("└── " if is_last else "├── ") + package)
+    deps = graph.get(package, [])
+    for i, dep in enumerate(deps):
+        extension = "    " if is_last else "│   "
+        print_ascii_tree(dep, graph, prefix + extension, i == len(deps) - 1, visited.copy())
+
 def main():
     parser = argparse.ArgumentParser(description='Dependency Graph Visualization Tool')
 
