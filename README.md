@@ -39,3 +39,8 @@ python main.py --package-name busybox --repo-url https://dl-cdn.alpinelinux.org/
 - [Этап 3: Основные операции](stage3_results.md)
 - [Этап 4: Дополнительные операции](stage4_results.md)
 - [Этап 5: Визуализация](stage5_results.md)
+
+## Пример использования
+
+Пакет `bash` для реального репозитория https://dl-cdn.alpinelinux.org/alpine/v3.5/main
+![](graph.svg)
